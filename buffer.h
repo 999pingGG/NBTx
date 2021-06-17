@@ -1,14 +1,15 @@
 /*
  * -----------------------------------------------------------------------------
  * "THE BEER-WARE LICENSE" (Revision 42):
- * Lukas Niederbremer <webmaster@flippeh.de> and Clark Gaebel <cg.wowus.cg@gmail.com>
- * wrote this file. As long as you retain this notice you can do whatever you
- * want with this stuff. If we meet some day, and you think this stuff is worth
- * it, you can buy us a beer in return.
+ * <webmaster@flippeh.de> wrote this file. As long as you retain this notice you
+ * can do whatever you want with this stuff. If we meet some day, and you think
+ * this stuff is worth it, you can buy me a beer in return. Lukas Niederbremer.
+ * -----------------------------------------------------------------------------
+ * NBTx modifications by Arnoldo A. Barón.
  * -----------------------------------------------------------------------------
  */
-#ifndef NBT_BUFFER_H
-#define NBT_BUFFER_H
+#ifndef NBTX_BUFFER_H_
+#define NBTX_BUFFER_H_
 
 #include <stddef.h>
 
@@ -27,12 +28,12 @@ struct buffer {
  * Initialize a buffer with this macro.
  *
  * Usage:
- *   struct buffer b = BUFFER_INIT;
+ *   struct buffer b = NBTX_BUFFER_INIT;
  * OR
  *   struct buffer b;
- *   b = BUFFER_INIT;
+ *   b = NBTX_BUFFER_INIT;
  */
-#define BUFFER_INIT (struct buffer) { NULL, 0, 0 }
+#define NBTX_BUFFER_INIT (struct buffer) { NULL, 0, 0 }
 
 /*
  * Frees all memory associated with the buffer. The same buffer may be freed

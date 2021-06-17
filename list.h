@@ -1,5 +1,5 @@
-#ifndef LIST_H
-#define LIST_H
+#ifndef NBTX_LIST_H_
+#define NBTX_LIST_H_
 
 #include <stddef.h>
 

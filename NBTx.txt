@@ -1,0 +1,87 @@
+New Named Binary Tag specification, version 1
+
+New NBT (New Named Binary Tag) is a tag based binary format designed to carry large amounts of binary data with smaller amounts of additional data.
+New NBT files have .nbtx extension. A .nbtx file consists of a single GZIPped named tag of type TAG_Compound or TAG_List.
+It is based upon Notch's NBT format, but it has a few modifications to make it more useful outside the Java world:
+	-Supports unsigned types.
+	-Little endian only, because nobody uses big endian today.
+	-Root tag in a .nbtx file may be a list, too.
+	-Slight renaming of stuff.
+
+NBTx is not backwards-compatible with NBT (used by Minecraft) due to mainly tag types not matching. Also, NBTx is little endian only.
+
+A named tag has the following format:
+
+    ubyte type
+    TAG_String name
+    [payload]
+    
+The type is a single byte defining the contents of the payload of the tag.
+
+The name is a descriptive name, and can be anything (eg "cat", "banana", "Hello World!"). It has nothing to do with the type.
+The purpose for this name is to name tags so parsing is easier and can be made to only look for certain recognized tag names.
+Exception: If type is TAG_End, the name is skipped and assumed to be "".
+
+The [payload] varies by type.
+
+Note that ONLY named tags carry a name and a type. Explicitly identified Tags (such as TAG_String above) only contains the payload. 
+
+
+All payloads are little endian. The tag types and respective payloads are:
+
+    TYPE: 0  NAME: TAG_End
+    Payload: None.
+    Note:    This tag is used to mark the end of a list.
+             Cannot be named! If type 0 appears where a named tag is expected, the name is assumed to be "".
+             (In other words, this tag is always just a single 0 byte when named, and nothing in all other cases)
+    
+    TYPE: 1  NAME: TAG_Byte
+    Payload: A single signed byte (8 bits)
+	
+	TYPE: 2  NAME: TAG_UnsignedByte
+    Payload: A single unsigned byte (8 bits)
+
+    TYPE: 3  NAME: TAG_Short
+    Payload: A signed short (16 bits)
+	
+	TYPE: 4  NAME: TAG_UnsignedShort
+    Payload: An unsigned short (16 bits)
+
+    TYPE: 5  NAME: TAG_Int
+    Payload: A signed int (32 bits)
+	
+	TYPE: 6  NAME: TAG_UnsignedInt
+    Payload: An unsigned int (32 bits)
+
+    TYPE: 7  NAME: TAG_Long
+    Payload: A signed long (64 bits)
+	
+	TYPE: 8  NAME: TAG_UnsignedLong
+    Payload: An unsigned long (64 bits)
+
+    TYPE: 9  NAME: TAG_Float
+    Payload: A floating point value (32 bits, IEEE 754)
+
+    TYPE: 10 NAME: TAG_Double
+    Payload: A floating point value (64 bits, IEEE 754)
+    
+    TYPE: 11 NAME: TAG_ByteArray
+    Payload: uint length 
+             An array of bytes of unspecified format. The length of this array is <length> bytes.
+
+    TYPE: 12 NAME: TAG_String
+    Payload: ushort length 
+             An array of bytes defining a string in UTF-8 format. The length of this array is <length> BYTES, not characters (NOT counting null terminator).
+
+    TYPE: 13 NAME: TAG_List
+    Payload: ubyte type
+             uint length
+             A sequential list of tags (not named tags), of type <type>. The length of this array is <length> tags
+    Notes:   All tags share the same type.
+             
+    TYPE: 14 NAME: TAG_Compound
+    Payload: A set of named tags. This set keeps going until a TAG_End is found.
+             TAG_End
+    Notes:   If there's a nested TAG_Compound within this tag, that one will also have a TAG_End, so simply reading until the next TAG_End will not work.
+             The names of the named tags have to be unique within each TAG_Compound
+             The order of the tags is not guaranteed.
