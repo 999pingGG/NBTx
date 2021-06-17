@@ -52,19 +52,16 @@ void nbtx_free_list(struct nbtx_list* list) {
 void nbtx_free(nbtx_node* tree) {
   if (tree == NULL) return;
 
-  if (tree->type == TAG_LIST)
+  if (tree->type == NBTX_TAG_LIST)
     nbtx_free_list(tree->payload.tag_list);
 
-  else if (tree->type == TAG_COMPOUND)
+  else if (tree->type == NBTX_TAG_COMPOUND)
     nbtx_free_list(tree->payload.tag_compound);
 
-  else if (tree->type == TAG_BYTE_ARRAY)
+  else if (tree->type == NBTX_TAG_BYTE_ARRAY)
     free(tree->payload.tag_byte_array.data);
 
-  else if (tree->type == TAG_INT_ARRAY)
-    free(tree->payload.tag_int_array.data);
-
-  else if (tree->type == TAG_STRING)
+  else if (tree->type == NBTX_TAG_STRING)
     free(tree->payload.tag_string);
 
   free(tree->name);
@@ -112,13 +109,13 @@ clone_error:
 }
 
 /* same as strdup, but handles NULL gracefully */
-static inline char* safe_strdup(const char* s) {
+static char* safe_strdup(const char* s) {
   return s ? nbtx_strdup(s) : NULL;
 }
 
 nbtx_node* nbtx_clone(nbtx_node* tree) {
   if (tree == NULL) return NULL;
-  assert(tree->type != TAG_INVALID);
+  assert(tree->type != NBTX_TAG_INVALID);
 
   nbtx_node* ret = NULL;
   CHECKED_MALLOC(ret, sizeof * ret, return NULL);
@@ -128,12 +125,12 @@ nbtx_node* nbtx_clone(nbtx_node* tree) {
 
   if (tree->name && ret->name == NULL) goto clone_error;
 
-  if (tree->type == TAG_STRING) {
+  if (tree->type == NBTX_TAG_STRING) {
     ret->payload.tag_string = nbtx_strdup(tree->payload.tag_string);
     if (ret->payload.tag_string == NULL) goto clone_error;
   }
 
-  else if (tree->type == TAG_BYTE_ARRAY) {
+  else if (tree->type == NBTX_TAG_BYTE_ARRAY) {
     unsigned char* newbuf;
     CHECKED_MALLOC(newbuf, tree->payload.tag_byte_array.length, goto clone_error);
 
@@ -145,22 +142,10 @@ nbtx_node* nbtx_clone(nbtx_node* tree) {
     ret->payload.tag_byte_array.length = tree->payload.tag_byte_array.length;
   }
 
-  else if (tree->type == TAG_INT_ARRAY) {
-    int32_t* newbuf;
-    CHECKED_MALLOC(newbuf, tree->payload.tag_int_array.length * sizeof(int32_t), goto clone_error);
-
-    memcpy(newbuf,
-           tree->payload.tag_int_array.data,
-           tree->payload.tag_int_array.length);
-
-    ret->payload.tag_int_array.data = newbuf;
-    ret->payload.tag_int_array.length = tree->payload.tag_int_array.length;
-  }
-
-  else if (tree->type == TAG_LIST) {
+  else if (tree->type == NBTX_TAG_LIST) {
     ret->payload.tag_list = clone_list(tree->payload.tag_list);
     if (ret->payload.tag_list == NULL) goto clone_error;
-  } else if (tree->type == TAG_COMPOUND) {
+  } else if (tree->type == NBTX_TAG_COMPOUND) {
     ret->payload.tag_compound = clone_list(tree->payload.tag_compound);
     if (ret->payload.tag_compound == NULL) goto clone_error;
   } else {
@@ -183,7 +168,7 @@ bool nbtx_map(nbtx_node* tree, nbtx_visitor_t v, void* aux) {
   if (!v(tree, aux)) return false;
 
   /* And if the item is a list or compound, recurse through each of their elements. */
-  if (tree->type == TAG_COMPOUND) {
+  if (tree->type == NBTX_TAG_COMPOUND) {
     struct list_head* pos;
 
     list_for_each(pos, &tree->payload.tag_compound->entry)
@@ -191,7 +176,7 @@ bool nbtx_map(nbtx_node* tree, nbtx_visitor_t v, void* aux) {
         return false;
   }
 
-  if (tree->type == TAG_LIST) {
+  if (tree->type == NBTX_TAG_LIST) {
     struct list_head* pos;
 
     list_for_each(pos, &tree->payload.tag_list->entry)
@@ -238,7 +223,7 @@ filter_error:
   return NULL;
 }
 
-nbtx_node* nbtx_filter(const nbtx_node* tree, nbtx_predicate_t filter, void* aux) {
+nbtx_node* nbtx_filter(const nbtx_node* tree, const nbtx_predicate_t filter, void* aux) {
   assert(filter);
 
   errno = NBTX_OK;
@@ -254,12 +239,12 @@ nbtx_node* nbtx_filter(const nbtx_node* tree, nbtx_predicate_t filter, void* aux
 
   if (tree->name && ret->name == NULL) goto filter_error;
 
-  if (tree->type == TAG_STRING) {
+  if (tree->type == NBTX_TAG_STRING) {
     ret->payload.tag_string = nbtx_strdup(tree->payload.tag_string);
     if (ret->payload.tag_string == NULL) goto filter_error;
   }
 
-  else if (tree->type == TAG_BYTE_ARRAY) {
+  else if (tree->type == NBTX_TAG_BYTE_ARRAY) {
     CHECKED_MALLOC(ret->payload.tag_byte_array.data,
                    tree->payload.tag_byte_array.length,
                    goto filter_error);
@@ -271,23 +256,11 @@ nbtx_node* nbtx_filter(const nbtx_node* tree, nbtx_predicate_t filter, void* aux
     ret->payload.tag_byte_array.length = tree->payload.tag_byte_array.length;
   }
 
-  else if (tree->type == TAG_INT_ARRAY) {
-    CHECKED_MALLOC(ret->payload.tag_int_array.data,
-                   tree->payload.tag_int_array.length * sizeof(int32_t),
-                   goto filter_error);
-
-    memcpy(ret->payload.tag_int_array.data,
-           tree->payload.tag_int_array.data,
-           tree->payload.tag_int_array.length);
-
-    ret->payload.tag_int_array.length = tree->payload.tag_int_array.length;
-  }
-
   /* Okay, we want to keep this node, but keep traversing the tree! */
-  else if (tree->type == TAG_LIST) {
+  else if (tree->type == NBTX_TAG_LIST) {
     ret->payload.tag_list = filter_list(tree->payload.tag_list, filter, aux);
     if (ret->payload.tag_list == NULL) goto filter_error;
-  } else if (tree->type == TAG_COMPOUND) {
+  } else if (tree->type == NBTX_TAG_COMPOUND) {
     ret->payload.tag_compound = filter_list(tree->payload.tag_compound, filter, aux);
     if (ret->payload.tag_compound == NULL) goto filter_error;
   } else {
@@ -311,12 +284,12 @@ nbtx_node* nbtx_filter_inplace(nbtx_node* tree, nbtx_predicate_t filter, void* a
 
   if (tree == NULL)               return                 NULL;
   if (!filter(tree, aux))         return nbtx_free(tree), NULL;
-  if (tree->type != TAG_LIST &&
-      tree->type != TAG_COMPOUND) return tree;
+  if (tree->type != NBTX_TAG_LIST &&
+      tree->type != NBTX_TAG_COMPOUND) return tree;
 
   struct list_head* pos;
   struct list_head* n;
-  struct nbtx_list* list = tree->type == TAG_LIST ? tree->payload.tag_list : tree->payload.tag_compound;
+  struct nbtx_list* list = tree->type == NBTX_TAG_LIST ? tree->payload.tag_list : tree->payload.tag_compound;
 
   list_for_each_safe(pos, n, &list->entry) {
     struct nbtx_list* cur = list_entry(pos, struct nbtx_list, entry);
@@ -332,14 +305,14 @@ nbtx_node* nbtx_filter_inplace(nbtx_node* tree, nbtx_predicate_t filter, void* a
   return tree;
 }
 
-nbtx_node* nbtxfind(nbtx_node* tree, nbtx_predicate_t predicate, void* aux) {
+nbtx_node* nbtxfind(nbtx_node* tree, const nbtx_predicate_t predicate, void* aux) {
   if (tree == NULL)                  return NULL;
   if (predicate(tree, aux))          return tree;
-  if (tree->type != TAG_LIST &&
-      tree->type != TAG_COMPOUND)    return NULL;
+  if (tree->type != NBTX_TAG_LIST &&
+      tree->type != NBTX_TAG_COMPOUND)    return NULL;
 
   struct list_head* pos;
-  struct nbtx_list* list = tree->type == TAG_LIST ? tree->payload.tag_list : tree->payload.tag_compound;
+  struct nbtx_list* list = tree->type == NBTX_TAG_LIST ? tree->payload.tag_list : tree->payload.tag_compound;
 
   list_for_each(pos, &list->entry) {
     struct nbtx_list* p = list_entry(pos, struct nbtx_list, entry);
@@ -427,12 +400,12 @@ nbtx_node* nbtx_find_by_path(nbtx_node* tree, const char* path) {
    * Initial names match, but the string isn't at the end. We're expecting a
    * list, but haven't hit one.
    */
-  if (tree->type != TAG_LIST && tree->type != TAG_COMPOUND) return NULL;
+  if (tree->type != NBTX_TAG_LIST && tree->type != NBTX_TAG_COMPOUND) return NULL;
 
   /* At this point, the inital names match, and we're not at a leaf node. */
 
   struct list_head* pos;
-  struct nbtx_list* list = tree->type == TAG_LIST ? tree->payload.tag_list : tree->payload.tag_compound;
+  struct nbtx_list* list = tree->type == NBTX_TAG_LIST ? tree->payload.tag_list : tree->payload.tag_compound;
   list_for_each(pos, &list->entry) {
     struct nbtx_list* elem = list_entry(pos, struct nbtx_list, entry);
     nbtx_node* r;
@@ -460,16 +433,16 @@ size_t nbtx_size(const nbtx_node* tree) {
   if (tree == NULL)
     return 0;
 
-  if (tree->type == TAG_LIST)
+  if (tree->type == NBTX_TAG_LIST)
     return nbtx_full_list_length(tree->payload.tag_list) + 1;
-  if (tree->type == TAG_COMPOUND)
+  if (tree->type == NBTX_TAG_COMPOUND)
     return nbtx_full_list_length(tree->payload.tag_compound) + 1;
 
   return 1;
 }
 
 nbtx_node* nbtx_list_item(nbtx_node* list, int n) {
-  if (list == NULL || (list->type != TAG_LIST && list->type != TAG_COMPOUND))
+  if (list == NULL || (list->type != NBTX_TAG_LIST && list->type != NBTX_TAG_COMPOUND))
     return NULL;
 
   int i = 0;

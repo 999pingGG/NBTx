@@ -16,59 +16,21 @@
 #include <assert.h>
 #include <errno.h>
 #include <inttypes.h>
-#include <stdio.h>
 #include <stdarg.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
- /* are we running on a little-endian system? */
-static int little_endian() {
-  uint16_t t = 0x0001;
-  char c[2];
-  memcpy(c, &t, sizeof t);
-  return c[0];
-}
-
-static void* swap_bytes(void* s, size_t len) {
-  for (char* b = s,
-       *e = b + len - 1;
-       b < e;
-       b++, e--) {
-    char t = *b;
-
-    *b = *e;
-    *e = t;
-  }
-
-  return s;
-}
-
-/* big endian to native endian. works in-place */
-static void* be2ne(void* s, size_t len) {
-  return little_endian() ? swap_bytes(s, len) : s;
-}
-
-/* native endian to big endian. works the exact same as its inverse */
-#define ne2be be2ne
-
-/* A special form of memcpy which copies `n' bytes into `dest', then returns
- * `src' + n.
- */
+ /* A special form of memcpy which copies `n' bytes into `dest', then returns
+  * `src' + n.
+  */
 static const void* memscan(void* dest, const void* src, size_t n) {
   memcpy(dest, src, n);
   return (const char*)src + n;
 }
 
-/* Does a memscan, then goes from big endian to native endian on the
- * destination.
- */
-static const void* swapped_memscan(void* dest, const void* src, size_t n) {
-  const void* ret = memscan(dest, src, n);
-  return be2ne(dest, n), ret;
-}
-
 #define CHECKED_MALLOC(var, n, on_error) do { \
-    if((var = malloc(n)) == NULL)             \
+    if(((var) = malloc(n)) == NULL)             \
     {                                         \
         errno = NBTX_EMEM;                     \
         on_error;                             \
@@ -85,23 +47,21 @@ static nbtx_node* parse_unnamed_tag(nbtx_type type, char* name, const char** mem
 
 /*
  * Reads some bytes from the memory stream. This macro will read `n'
- * bytes into `dest', call either memscan or swapped_memscan depending on
- * `scanner', then fix the length. If anything funky goes down, `on_failure'
- * will be executed.
+ * bytes into `dest', call memscan, then fix the length. If anything
+ * funky goes down, `on_failure' will be executed.
  */
-#define READ_GENERIC(dest, n, scanner, on_failure) do { \
+#define READ_GENERIC(dest, n, on_failure) do { \
     if(*length < (n)) { on_failure; }                   \
-    *memory = scanner((dest), *memory, (n));            \
+    *memory = memscan((dest), *memory, (n));            \
     *length -= (n);                                     \
 } while(0)
 
  /* printfs into the end of a buffer. Note: no null-termination! */
 static void bprintf(struct buffer* b, const char* restrict format, ...) {
   va_list args;
-  int siz;
 
   va_start(args, format);
-  siz = vsnprintf(NULL, 0, format, args);
+  const int siz = vsnprintf(NULL, 0, format, args);
   va_end(args);
 
   buffer_reserve(b, b->len + siz + 1);
@@ -121,14 +81,14 @@ static char* read_string(const char** memory, size_t* length) {
   int16_t string_length;
   char* ret = NULL;
 
-  READ_GENERIC(&string_length, sizeof string_length, swapped_memscan, goto parse_error);
+  READ_GENERIC(&string_length, sizeof string_length, goto parse_error);
 
   if (string_length < 0)               goto parse_error;
   if (*length < (size_t)string_length) goto parse_error;
 
   CHECKED_MALLOC(ret, string_length + 1, goto parse_error);
 
-  READ_GENERIC(ret, (size_t)string_length, memscan, goto parse_error);
+  READ_GENERIC(ret, (size_t)string_length, goto parse_error);
 
   ret[string_length] = '\0'; /* don't forget to NULL-terminate ;) */
   return ret;
@@ -145,7 +105,7 @@ static nbtx_node* parse_named_tag(const char** memory, size_t* length) {
   char* name = NULL;
 
   uint8_t type;
-  READ_GENERIC(&type, sizeof type, memscan, goto parse_error);
+  READ_GENERIC(&type, sizeof type, goto parse_error);
 
   name = read_string(memory, length);
 
@@ -166,41 +126,13 @@ static struct nbtx_byte_array read_byte_array(const char** memory, size_t* lengt
   struct nbtx_byte_array ret;
   ret.data = NULL;
 
-  READ_GENERIC(&ret.length, sizeof ret.length, swapped_memscan, goto parse_error);
+  READ_GENERIC(&ret.length, sizeof ret.length, goto parse_error);
 
   if (ret.length < 0) goto parse_error;
 
   CHECKED_MALLOC(ret.data, ret.length, goto parse_error);
 
-  READ_GENERIC(ret.data, (size_t)ret.length, memscan, goto parse_error);
-
-  return ret;
-
-parse_error:
-  if (errno == NBTX_OK)
-    errno = NBTX_ERR;
-
-  free(ret.data);
-  ret.data = NULL;
-  return ret;
-}
-
-static struct nbtx_int_array read_int_array(const char** memory, size_t* length) {
-  struct nbtx_int_array ret;
-  ret.data = NULL;
-
-  READ_GENERIC(&ret.length, sizeof ret.length, swapped_memscan, goto parse_error);
-
-  if (ret.length < 0) goto parse_error;
-
-  CHECKED_MALLOC(ret.data, ret.length * sizeof(int32_t), goto parse_error);
-
-  READ_GENERIC(ret.data, (size_t)ret.length * sizeof(int32_t), memscan, goto parse_error);
-
-
-  // Byteswap the whole array.
-  for (int32_t i = 0; i < ret.length; i++)
-    be2ne(ret.data + i, sizeof(int32_t));
+  READ_GENERIC(ret.data, (size_t)ret.length, goto parse_error);
 
   return ret;
 
@@ -215,30 +147,30 @@ parse_error:
 
 /*
  * Is the list all one type? If yes, return the type. Otherwise, return
- * TAG_INVALID
+ * NBTX_TAG_INVALID
  */
 static nbtx_type list_is_homogenous(const struct nbtx_list* list) {
-  nbtx_type type = TAG_INVALID;
+  nbtx_type type = NBTX_TAG_INVALID;
 
   const struct list_head* pos;
   list_for_each(pos, &list->entry) {
     const struct nbtx_list* cur = list_entry(pos, const struct nbtx_list, entry);
 
     assert(cur->data);
-    assert(cur->data->type != TAG_INVALID);
+    assert(cur->data->type != NBTX_TAG_INVALID);
 
-    if (cur->data->type == TAG_INVALID)
-      return TAG_INVALID;
+    if (cur->data->type == NBTX_TAG_INVALID)
+      return NBTX_TAG_INVALID;
 
     /* if we're the first type, just set it to our current type */
-    if (type == TAG_INVALID) type = cur->data->type;
+    if (type == NBTX_TAG_INVALID) type = cur->data->type;
 
     if (type != cur->data->type)
-      return TAG_INVALID;
+      return NBTX_TAG_INVALID;
   }
 
   /* if the list was empty, use the sentinel type */
-  if (type == TAG_INVALID && list->data != NULL)
+  if (type == NBTX_TAG_INVALID && list->data != NULL)
     type = list->data->type;
 
   return type;
@@ -257,10 +189,10 @@ static struct nbtx_list* read_list(const char** memory, size_t* length) {
 
   INIT_LIST_HEAD(&ret->entry);
 
-  READ_GENERIC(&type, sizeof type, swapped_memscan, goto parse_error);
-  READ_GENERIC(&elems, sizeof elems, swapped_memscan, goto parse_error);
+  READ_GENERIC(&type, sizeof type, goto parse_error);
+  READ_GENERIC(&elems, sizeof elems, goto parse_error);
 
-  ret->data->type = type == TAG_INVALID ? TAG_COMPOUND : (nbtx_type)type;
+  ret->data->type = type == NBTX_TAG_INVALID ? NBTX_TAG_COMPOUND : (nbtx_type)type;
 
   for (int32_t i = 0; i < elems; i++) {
     struct nbtx_list* new;
@@ -300,7 +232,7 @@ static struct nbtx_list* read_compound(const char** memory, size_t* length) {
     char* name = NULL;
     struct nbtx_list* new_entry;
 
-    READ_GENERIC(&type, sizeof type, swapped_memscan, goto parse_error);
+    READ_GENERIC(&type, sizeof type, goto parse_error);
 
     if (type == 0) break; /* TAG_END == 0. We've hit the end of the list when type == TAG_END. */
 
@@ -345,43 +277,53 @@ static nbtx_node* parse_unnamed_tag(nbtx_type type, char* name, const char** mem
   node->name = name;
 
   #define COPY_INTO_PAYLOAD(payload_name) \
-    READ_GENERIC(&node->payload.payload_name, sizeof node->payload.payload_name, swapped_memscan, goto parse_error);
+    READ_GENERIC(&node->payload.payload_name, sizeof node->payload.payload_name, goto parse_error)
 
   switch (type) {
-    case TAG_BYTE:
+    case NBTX_TAG_BYTE:
       COPY_INTO_PAYLOAD(tag_byte);
       break;
-    case TAG_SHORT:
+    case NBTX_TAG_UNSIGNED_BYTE:
+      COPY_INTO_PAYLOAD(tag_ubyte);
+      break;
+    case NBTX_TAG_SHORT:
       COPY_INTO_PAYLOAD(tag_short);
       break;
-    case TAG_INT:
+    case NBTX_TAG_UNSIGNED_SHORT:
+      COPY_INTO_PAYLOAD(tag_ushort);
+      break;
+    case NBTX_TAG_INT:
       COPY_INTO_PAYLOAD(tag_int);
       break;
-    case TAG_LONG:
+    case NBTX_TAG_UNSIGNED_INT:
+      COPY_INTO_PAYLOAD(tag_uint);
+      break;
+    case NBTX_TAG_LONG:
       COPY_INTO_PAYLOAD(tag_long);
       break;
-    case TAG_FLOAT:
+    case NBTX_TAG_UNSIGNED_LONG:
+      COPY_INTO_PAYLOAD(tag_ulong);
+      break;
+    case NBTX_TAG_FLOAT:
       COPY_INTO_PAYLOAD(tag_float);
       break;
-    case TAG_DOUBLE:
+    case NBTX_TAG_DOUBLE:
       COPY_INTO_PAYLOAD(tag_double);
       break;
-    case TAG_BYTE_ARRAY:
+    case NBTX_TAG_BYTE_ARRAY:
       node->payload.tag_byte_array = read_byte_array(memory, length);
       break;
-    case TAG_INT_ARRAY:
-      node->payload.tag_int_array = read_int_array(memory, length);
-      break;
-    case TAG_STRING:
+    case NBTX_TAG_STRING:
       node->payload.tag_string = read_string(memory, length);
       break;
-    case TAG_LIST:
+    case NBTX_TAG_LIST:
       node->payload.tag_list = read_list(memory, length);
       break;
-    case TAG_COMPOUND:
+    case NBTX_TAG_COMPOUND:
       node->payload.tag_compound = read_compound(memory, length);
       break;
 
+    case NBTX_TAG_INVALID:
     default:
       goto parse_error; /* Unknown node or TAG_END. Either way, we shouldn't be parsing this. */
   }
@@ -411,7 +353,7 @@ nbtx_node* nbtx_parse(const void* mem, size_t len) {
 
 /* spaces, not tabs ;) */
 static void indent(struct buffer* b, size_t amount) {
-  size_t spaces = amount * 4; /* 4 spaces per indent */
+  size_t spaces = amount * 2; /* 2 spaces per indent */
 
   char temp[spaces + 1];
 
@@ -436,15 +378,6 @@ static void dump_byte_array(const struct nbtx_byte_array ba, struct buffer* b) {
   bprintf(b, "]");
 }
 
-static void dump_int_array(const struct nbtx_int_array ia, struct buffer* b) {
-  assert(ia.length >= 0);
-
-  bprintf(b, "[ ");
-  for (int32_t i = 0; i < ia.length; ++i)
-    bprintf(b, "%u ", +ia.data[i]);
-  bprintf(b, "]");
-}
-
 static nbtx_status dump_list_contents_ascii(const struct nbtx_list* list, struct buffer* b, size_t ident) {
   const struct list_head* pos;
 
@@ -464,58 +397,60 @@ static nbtx_status dump_ascii(const nbtx_node* tree, struct buffer* b, const siz
 
   indent(b, ident);
 
-  if (tree->type == TAG_BYTE)
+  if (tree->type == NBTX_TAG_BYTE)
     bprintf(b, "TAG_Byte(\"%s\"): %i\n", SAFE_NAME(tree), (int)tree->payload.tag_byte);
-  else if (tree->type == TAG_SHORT)
+  else if (tree->type == NBTX_TAG_UNSIGNED_BYTE)
+    bprintf(b, "TAG_UnsignedByte(\"%s\"): %i\n", SAFE_NAME(tree), (int)tree->payload.tag_ubyte);
+  else if (tree->type == NBTX_TAG_SHORT)
     bprintf(b, "TAG_Short(\"%s\"): %i\n", SAFE_NAME(tree), (int)tree->payload.tag_short);
-  else if (tree->type == TAG_INT)
-    bprintf(b, "TAG_Int(\"%s\"): %i\n", SAFE_NAME(tree), (int)tree->payload.tag_int);
-  else if (tree->type == TAG_LONG)
+  else if (tree->type == NBTX_TAG_UNSIGNED_SHORT)
+    bprintf(b, "TAG_UnsignedShort(\"%s\"): %i\n", SAFE_NAME(tree), (int)tree->payload.tag_ushort);
+  else if (tree->type == NBTX_TAG_INT)
+    bprintf(b, "TAG_Int(\"%s\"): %i\n", SAFE_NAME(tree), tree->payload.tag_int);
+  else if (tree->type == NBTX_TAG_UNSIGNED_INT)
+    bprintf(b, "TAG_UnsignedInt(\"%s\"): %u\n", SAFE_NAME(tree), tree->payload.tag_uint);
+  else if (tree->type == NBTX_TAG_LONG)
     bprintf(b, "TAG_Long(\"%s\"): %" PRIi64 "\n", SAFE_NAME(tree), tree->payload.tag_long);
-  else if (tree->type == TAG_FLOAT)
+  else if (tree->type == NBTX_TAG_UNSIGNED_LONG)
+    bprintf(b, "TAG_UnsignedLong(\"%s\"): %" PRIu64 "\n", SAFE_NAME(tree), tree->payload.tag_ulong);
+  else if (tree->type == NBTX_TAG_FLOAT)
     bprintf(b, "TAG_Float(\"%s\"): %f\n", SAFE_NAME(tree), (double)tree->payload.tag_float);
-  else if (tree->type == TAG_DOUBLE)
+  else if (tree->type == NBTX_TAG_DOUBLE)
     bprintf(b, "TAG_Double(\"%s\"): %f\n", SAFE_NAME(tree), tree->payload.tag_double);
-  else if (tree->type == TAG_BYTE_ARRAY) {
-    bprintf(b, "TAG_Byte_Array(\"%s\"): ", SAFE_NAME(tree));
+  else if (tree->type == NBTX_TAG_BYTE_ARRAY) {
+    bprintf(b, "TAG_ByteArray(\"%s\"): ", SAFE_NAME(tree));
     dump_byte_array(tree->payload.tag_byte_array, b);
     bprintf(b, "\n");
-  } else if (tree->type == TAG_INT_ARRAY) {
-    bprintf(b, "Tag_Int_Array(\"%s\"): ", SAFE_NAME(tree));
-    dump_int_array(tree->payload.tag_int_array, b);
-    bprintf(b, "\n");
-  } else if (tree->type == TAG_STRING) {
+  } if (tree->type == NBTX_TAG_STRING) {
     if (tree->payload.tag_string == NULL)
       return NBTX_ERR;
 
     bprintf(b, "TAG_String(\"%s\"): %s\n", SAFE_NAME(tree), tree->payload.tag_string);
-  } else if (tree->type == TAG_LIST) {
+  } else if (tree->type == NBTX_TAG_LIST) {
     bprintf(b, "TAG_List(\"%s\") [%s]\n", SAFE_NAME(tree), nbtx_type_to_string(tree->payload.tag_list->data->type));
     indent(b, ident);
     bprintf(b, "{\n");
 
-    nbtx_status err = dump_list_contents_ascii(tree->payload.tag_list, b, ident + 1);
+    const nbtx_status err = dump_list_contents_ascii(tree->payload.tag_list, b, ident + 1);
 
     indent(b, ident);
     bprintf(b, "}\n");
 
     if (err != NBTX_OK)
       return err;
-  } else if (tree->type == TAG_COMPOUND) {
+  } else if (tree->type == NBTX_TAG_COMPOUND) {
     bprintf(b, "TAG_Compound(\"%s\")\n", SAFE_NAME(tree));
     indent(b, ident);
     bprintf(b, "{\n");
 
-    nbtx_status err = dump_list_contents_ascii(tree->payload.tag_compound, b, ident + 1);
+    const nbtx_status err = dump_list_contents_ascii(tree->payload.tag_compound, b, ident + 1);
 
     indent(b, ident);
     bprintf(b, "}\n");
 
     if (err != NBTX_OK)
       return err;
-  }
-
-  else
+  } else
     return NBTX_ERR;
 
   return NBTX_OK;
@@ -547,8 +482,6 @@ OOM:
 static nbtx_status dump_byte_array_binary(const struct nbtx_byte_array ba, struct buffer* b) {
   int32_t dumped_length = ba.length;
 
-  ne2be(&dumped_length, sizeof dumped_length);
-
   CHECKED_APPEND(b, &dumped_length, sizeof dumped_length);
 
   if (ba.length) assert(ba.data);
@@ -558,35 +491,16 @@ static nbtx_status dump_byte_array_binary(const struct nbtx_byte_array ba, struc
   return NBTX_OK;
 }
 
-static nbtx_status dump_int_array_binary(const struct nbtx_int_array ia, struct buffer* b) {
-  int32_t dumped_length = ia.length;
-
-  ne2be(&dumped_length, sizeof dumped_length);
-
-  CHECKED_APPEND(b, &dumped_length, sizeof dumped_length);
-
-  if (ia.length) assert(ia.data);
-
-  for (int32_t i = 0; i < ia.length; i++) {
-    int32_t swappedElem = ia.data[i];
-    ne2be(&swappedElem, sizeof(swappedElem));
-    CHECKED_APPEND(b, &swappedElem, sizeof(swappedElem));
-  }
-
-  return NBTX_OK;
-}
-
 static nbtx_status dump_string_binary(const char* name, struct buffer* b) {
   assert(name);
 
-  size_t len = strlen(name);
+  const size_t len = strlen(name);
 
   if (len > 32767 /* SHORT_MAX */)
     return NBTX_ERR;
 
   { /* dump the length */
     int16_t dumped_len = (int16_t)len;
-    ne2be(&dumped_len, sizeof dumped_len);
 
     CHECKED_APPEND(b, &dumped_len, sizeof dumped_len);
   }
@@ -596,30 +510,28 @@ static nbtx_status dump_string_binary(const char* name, struct buffer* b) {
   return NBTX_OK;
 }
 
-static nbtx_status __dump_binary(const nbtx_node*, bool, struct buffer*);
+static nbtx_status dump_binary_(const nbtx_node*, bool, struct buffer*);
 
 static nbtx_status dump_list_binary(const struct nbtx_list* list, struct buffer* b) {
-  nbtx_type type = list_is_homogenous(list);
+  const nbtx_type type = list_is_homogenous(list);
 
-  size_t len = list_length(&list->entry);
+  const size_t len = list_length(&list->entry);
 
   if (len > 2147483647 /* INT_MAX */)
     return NBTX_ERR;
 
-  assert(type != TAG_INVALID);
+  assert(type != NBTX_TAG_INVALID);
 
-  if (type == TAG_INVALID)
+  if (type == NBTX_TAG_INVALID)
     return NBTX_ERR;
 
   {
     int8_t _type = (int8_t)type;
-    ne2be(&_type, sizeof _type); /* unnecessary, but left in to keep similar code looking similar */
     CHECKED_APPEND(b, &_type, sizeof _type);
   }
 
   {
     int32_t dumped_len = (int32_t)len;
-    ne2be(&dumped_len, sizeof dumped_len);
     CHECKED_APPEND(b, &dumped_len, sizeof dumped_len);
   }
 
@@ -628,7 +540,7 @@ static nbtx_status dump_list_binary(const struct nbtx_list* list, struct buffer*
     const struct nbtx_list* entry = list_entry(pos, const struct nbtx_list, entry);
     nbtx_status ret;
 
-    if ((ret = __dump_binary(entry->data, false, b)) != NBTX_OK)
+    if ((ret = dump_binary_(entry->data, false, b)) != NBTX_OK)
       return ret;
   }
 
@@ -641,7 +553,7 @@ static nbtx_status dump_compound_binary(const struct nbtx_list* list, struct buf
     const struct nbtx_list* entry = list_entry(pos, const struct nbtx_list, entry);
     nbtx_status ret;
 
-    if ((ret = __dump_binary(entry->data, true, b)) != NBTX_OK)
+    if ((ret = dump_binary_(entry->data, true, b)) != NBTX_OK)
       return ret;
   }
 
@@ -657,7 +569,7 @@ static nbtx_status dump_compound_binary(const struct nbtx_list* list, struct buf
  *                    when dumping lists, because the list header already says
  *                    the type.
  */
-static nbtx_status __dump_binary(const nbtx_node* tree, bool dump_type, struct buffer* b) {
+static nbtx_status dump_binary_(const nbtx_node* tree, bool dump_type, struct buffer* b) {
   if (dump_type) { /* write out the type */
     int8_t type = (int8_t)tree->type;
 
@@ -671,33 +583,38 @@ static nbtx_status __dump_binary(const nbtx_node* tree, bool dump_type, struct b
       return err;
   }
 
-  #define DUMP_NUM(type, x) do {               \
+  #define DUMP_NUM(type, x) do {             \
     type temp = x;                           \
-    ne2be(&temp, sizeof temp);               \
     CHECKED_APPEND(b, &temp, sizeof temp);   \
 } while(0)
 
-  if (tree->type == TAG_BYTE)
+  if (tree->type == NBTX_TAG_BYTE)
     DUMP_NUM(int8_t, tree->payload.tag_byte);
-  else if (tree->type == TAG_SHORT)
+  if (tree->type == NBTX_TAG_UNSIGNED_BYTE)
+    DUMP_NUM(uint8_t, tree->payload.tag_ubyte);
+  else if (tree->type == NBTX_TAG_SHORT)
     DUMP_NUM(int16_t, tree->payload.tag_short);
-  else if (tree->type == TAG_INT)
+  else if (tree->type == NBTX_TAG_UNSIGNED_SHORT)
+    DUMP_NUM(uint16_t, tree->payload.tag_ushort);
+  else if (tree->type == NBTX_TAG_INT)
     DUMP_NUM(int32_t, tree->payload.tag_int);
-  else if (tree->type == TAG_LONG)
+  else if (tree->type == NBTX_TAG_UNSIGNED_INT)
+    DUMP_NUM(uint32_t, tree->payload.tag_uint);
+  else if (tree->type == NBTX_TAG_LONG)
     DUMP_NUM(int64_t, tree->payload.tag_long);
-  else if (tree->type == TAG_FLOAT)
+  else if (tree->type == NBTX_TAG_UNSIGNED_LONG)
+    DUMP_NUM(uint64_t, tree->payload.tag_ulong);
+  else if (tree->type == NBTX_TAG_FLOAT)
     DUMP_NUM(float, tree->payload.tag_float);
-  else if (tree->type == TAG_DOUBLE)
+  else if (tree->type == NBTX_TAG_DOUBLE)
     DUMP_NUM(double, tree->payload.tag_double);
-  else if (tree->type == TAG_BYTE_ARRAY)
+  else if (tree->type == NBTX_TAG_BYTE_ARRAY)
     return dump_byte_array_binary(tree->payload.tag_byte_array, b);
-  else if (tree->type == TAG_INT_ARRAY)
-    return dump_int_array_binary(tree->payload.tag_int_array, b);
-  else if (tree->type == TAG_STRING)
+  else if (tree->type == NBTX_TAG_STRING)
     return dump_string_binary(tree->payload.tag_string, b);
-  else if (tree->type == TAG_LIST)
+  else if (tree->type == NBTX_TAG_LIST)
     return dump_list_binary(tree->payload.tag_list, b);
-  else if (tree->type == TAG_COMPOUND)
+  else if (tree->type == NBTX_TAG_COMPOUND)
     return dump_compound_binary(tree->payload.tag_compound, b);
 
   else
@@ -715,7 +632,7 @@ struct buffer nbtx_dump_binary(const nbtx_node* tree) {
 
   struct buffer ret = NBTX_BUFFER_INIT;
 
-  errno = __dump_binary(tree, true, &ret);
+  errno = dump_binary_(tree, true, &ret);
 
   return ret;
 }

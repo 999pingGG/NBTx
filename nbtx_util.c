@@ -14,20 +14,23 @@
 #include <string.h>
 
 const char* nbtx_type_to_string(const nbtx_type t) {
-  #define DEF_CASE(name) case name: return #name;
+  #define DEF_CASE(name) case name: return #name
   switch (t) {
     case 0: return "TAG_END";
-      DEF_CASE(TAG_BYTE)
-        DEF_CASE(TAG_SHORT)
-        DEF_CASE(TAG_INT)
-        DEF_CASE(TAG_LONG)
-        DEF_CASE(TAG_FLOAT)
-        DEF_CASE(TAG_DOUBLE)
-        DEF_CASE(TAG_BYTE_ARRAY)
-        DEF_CASE(TAG_STRING)
-        DEF_CASE(TAG_LIST)
-        DEF_CASE(TAG_COMPOUND)
-        DEF_CASE(TAG_INT_ARRAY)
+      DEF_CASE(NBTX_TAG_BYTE);
+      DEF_CASE(NBTX_TAG_UNSIGNED_BYTE);
+      DEF_CASE(NBTX_TAG_SHORT);
+      DEF_CASE(NBTX_TAG_UNSIGNED_SHORT);
+      DEF_CASE(NBTX_TAG_INT);
+      DEF_CASE(NBTX_TAG_UNSIGNED_INT);
+      DEF_CASE(NBTX_TAG_LONG);
+      DEF_CASE(NBTX_TAG_UNSIGNED_LONG);
+      DEF_CASE(NBTX_TAG_FLOAT);
+      DEF_CASE(NBTX_TAG_DOUBLE);
+      DEF_CASE(NBTX_TAG_BYTE_ARRAY);
+      DEF_CASE(NBTX_TAG_STRING);
+      DEF_CASE(NBTX_TAG_LIST);
+      DEF_CASE(NBTX_TAG_COMPOUND);
     default:
       return "TAG_UNKNOWN";
   }
@@ -83,36 +86,39 @@ bool nbtx_eq(const nbtx_node* restrict a, const nbtx_node* restrict b) {
     return false;
 
   switch (a->type) {
-    case TAG_BYTE:
+    case NBTX_TAG_BYTE:
       return a->payload.tag_byte == b->payload.tag_byte;
-    case TAG_SHORT:
+    case NBTX_TAG_UNSIGNED_BYTE:
+      return a->payload.tag_ubyte == b->payload.tag_ubyte;
+    case NBTX_TAG_SHORT:
       return a->payload.tag_short == b->payload.tag_short;
-    case TAG_INT:
+    case NBTX_TAG_UNSIGNED_SHORT:
+      return a->payload.tag_ushort == b->payload.tag_ushort;
+    case NBTX_TAG_INT:
       return a->payload.tag_int == b->payload.tag_int;
-    case TAG_LONG:
+    case NBTX_TAG_UNSIGNED_INT:
+      return a->payload.tag_uint == b->payload.tag_uint;
+    case NBTX_TAG_LONG:
       return a->payload.tag_long == b->payload.tag_long;
-    case TAG_FLOAT:
+    case NBTX_TAG_UNSIGNED_LONG:
+      return a->payload.tag_ulong == b->payload.tag_ulong;
+    case NBTX_TAG_FLOAT:
       return floats_are_close((double)a->payload.tag_float, (double)b->payload.tag_float);
-    case TAG_DOUBLE:
+    case NBTX_TAG_DOUBLE:
       return floats_are_close(a->payload.tag_double, b->payload.tag_double);
-    case TAG_BYTE_ARRAY:
+    case NBTX_TAG_BYTE_ARRAY:
       if (a->payload.tag_byte_array.length != b->payload.tag_byte_array.length) return false;
       return memcmp(a->payload.tag_byte_array.data,
                     b->payload.tag_byte_array.data,
                     a->payload.tag_byte_array.length) == 0;
-    case TAG_INT_ARRAY:
-      if (a->payload.tag_int_array.length != b->payload.tag_int_array.length) return false;
-      return memcmp(a->payload.tag_int_array.data,
-                    b->payload.tag_int_array.data,
-                    a->payload.tag_int_array.length) == 0;
-    case TAG_STRING:
+    case NBTX_TAG_STRING:
       return strcmp(a->payload.tag_string, b->payload.tag_string) == 0;
-    case TAG_LIST:
-    case TAG_COMPOUND:
+    case NBTX_TAG_LIST:
+    case NBTX_TAG_COMPOUND:
     {
       struct list_head* ai, * bi;
-      struct nbtx_list* alist = a->type == TAG_LIST ? a->payload.tag_list : a->payload.tag_compound;
-      struct nbtx_list* blist = b->type == TAG_LIST ? b->payload.tag_list : b->payload.tag_compound;
+      struct nbtx_list* alist = a->type == NBTX_TAG_LIST ? a->payload.tag_list : a->payload.tag_compound;
+      struct nbtx_list* blist = b->type == NBTX_TAG_LIST ? b->payload.tag_list : b->payload.tag_compound;
 
       for (ai = alist->entry.flink, bi = blist->entry.flink;
            ai != &alist->entry && bi != &blist->entry;
@@ -131,7 +137,7 @@ bool nbtx_eq(const nbtx_node* restrict a, const nbtx_node* restrict b) {
       return true;
     }
 
-    case TAG_INVALID:
+    case NBTX_TAG_INVALID:
     default: /* wtf invalid type */
       assert(false);
       return false;

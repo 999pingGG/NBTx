@@ -9,3 +9,4 @@ testdata/dump.bin
 testdata/dump2.bin
 build/
 .vs
+.vscode

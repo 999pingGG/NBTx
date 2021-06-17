@@ -171,7 +171,7 @@ static struct buffer nbtx_decompress(const void* mem, size_t len) {
     stream.avail_out = NBTX_CHUNK_SIZE;
     stream.next_out = (unsigned char*)ret.data + ret.len;
 
-    switch ((zlib_ret = inflate(&stream, Z_NO_FLUSH))) {
+    switch (zlib_ret = inflate(&stream, Z_NO_FLUSH)) {
       case Z_MEM_ERROR:
         errno = NBTX_EMEM;
         /* fall through */
