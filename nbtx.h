@@ -176,6 +176,16 @@ extern "C" {
  */
   nbtx_node* nbtx_parse(const void* memory, size_t length);
 
+  typedef enum {
+    NBTX_SAME_LINE = 1,
+    NBTX_OWN_LINE
+  } nbtx_brace_style;
+
+  typedef enum {
+    NBTX_HEX,
+    NBTX_DEC
+  } nbtx_byte_array_style;
+
   /*
    * Returns a NULL-terminated string as the ascii representation of the tree. If
    * an error occurs, NULL will be returned and errno will be set.
@@ -183,7 +193,7 @@ extern "C" {
    * 1) Check your damn pointers.
    * 2) Don't forget to free the returned pointer. Memory leaks are bad, mkay?
    */
-  char* nbtx_dump_ascii(const nbtx_node* tree);
+  char* nbtx_dump_ascii(const nbtx_node* tree, nbtx_brace_style brace_style, nbtx_byte_array_style byte_array_style, int spaces);
 
   /*
    * Returns a buffer representing the uncompressed tree in NBTx official

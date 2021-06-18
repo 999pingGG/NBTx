@@ -42,7 +42,7 @@ void dump_nbtx(const char* filename) {
     return;
   }
 
-  char* str = nbtx_dump_ascii(root);
+  char* str = nbtx_dump_ascii(root, NBTX_SAME_LINE, NBTX_HEX, 2);
   nbtx_free(root);
 
   if (str == NULL)

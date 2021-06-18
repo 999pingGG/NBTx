@@ -352,100 +352,137 @@ nbtx_node* nbtx_parse(const void* mem, size_t len) {
 }
 
 /* spaces, not tabs ;) */
-static void indent(struct buffer* b, size_t amount) {
-  size_t spaces = amount * 2; /* 2 spaces per indent */
+static void indent(struct buffer* b, const int amount, int spaces) {
+  spaces *= amount;
 
   char temp[spaces + 1];
 
-  for (size_t i = 0; i < spaces; ++i)
+  for (int i = 0; i < spaces; ++i)
     temp[i] = ' ';
   temp[spaces] = '\0';
 
   bprintf(b, "%s", temp);
 }
 
-static nbtx_status dump_ascii(const nbtx_node*, struct buffer*, size_t ident);
+static nbtx_status dump_ascii(
+  const nbtx_node*,
+  struct buffer*,
+  int ident,
+  nbtx_brace_style brace_style,
+  nbtx_byte_array_style byte_array_style,
+  bool print_type,
+  int spaces);
 
 /* prints the node's name, or (null) if it has none. */
 #define SAFE_NAME(node) ((node)->name ? (node)->name : "<null>")
 
-static void dump_byte_array(const struct nbtx_byte_array ba, struct buffer* b) {
+static void dump_byte_array(const struct nbtx_byte_array ba, struct buffer* b, const nbtx_byte_array_style byte_array_style) {
   assert(ba.length >= 0);
 
   bprintf(b, "[ ");
   for (int32_t i = 0; i < ba.length; ++i)
-    bprintf(b, "%u ", +ba.data[i]);
+    bprintf(b, byte_array_style == NBTX_HEX ? "%02x " : "%u ", ba.data[i]);
   bprintf(b, "]");
 }
 
-static nbtx_status dump_list_contents_ascii(const struct nbtx_list* list, struct buffer* b, size_t ident) {
+static nbtx_status dump_list_contents_ascii(
+  const struct nbtx_list* list,
+  struct buffer* b,
+  const int ident,
+  const nbtx_brace_style brace_style,
+  const nbtx_byte_array_style byte_array_style,
+  const bool print_types,
+  const int spaces) {
   const struct list_head* pos;
 
   list_for_each(pos, &list->entry) {
     const struct nbtx_list* entry = list_entry(pos, const struct nbtx_list, entry);
     nbtx_status err;
 
-    if ((err = dump_ascii(entry->data, b, ident)) != NBTX_OK)
+    if ((err = dump_ascii(entry->data, b, ident, brace_style, byte_array_style, print_types, spaces)) != NBTX_OK)
       return err;
   }
 
   return NBTX_OK;
 }
 
-static nbtx_status dump_ascii(const nbtx_node* tree, struct buffer* b, const size_t ident) {
+static nbtx_status dump_ascii(
+  const nbtx_node* tree,
+  struct buffer* b,
+  const int ident,
+  const nbtx_brace_style brace_style,
+  const nbtx_byte_array_style byte_array_style,
+  const bool print_type,
+  const int spaces) {
   if (tree == NULL) return NBTX_OK;
 
-  indent(b, ident);
+  indent(b, ident, spaces);
 
   if (tree->type == NBTX_TAG_BYTE)
-    bprintf(b, "TAG_Byte(\"%s\"): %i\n", SAFE_NAME(tree), (int)tree->payload.tag_byte);
+    bprintf(b, print_type ? "TAG_Byte(\"%s\"): %i\n" : "%.0s%i\n", SAFE_NAME(tree), (int)tree->payload.tag_byte);
   else if (tree->type == NBTX_TAG_UNSIGNED_BYTE)
-    bprintf(b, "TAG_UnsignedByte(\"%s\"): %i\n", SAFE_NAME(tree), (int)tree->payload.tag_ubyte);
+    bprintf(b, print_type ? "TAG_UnsignedByte(\"%s\"): %i\n" : "%.0s%i\n", SAFE_NAME(tree), (int)tree->payload.tag_ubyte);
   else if (tree->type == NBTX_TAG_SHORT)
-    bprintf(b, "TAG_Short(\"%s\"): %i\n", SAFE_NAME(tree), (int)tree->payload.tag_short);
+    bprintf(b, print_type ? "TAG_Short(\"%s\"): %i\n" : "%.0s%i\n", SAFE_NAME(tree), (int)tree->payload.tag_short);
   else if (tree->type == NBTX_TAG_UNSIGNED_SHORT)
-    bprintf(b, "TAG_UnsignedShort(\"%s\"): %i\n", SAFE_NAME(tree), (int)tree->payload.tag_ushort);
+    bprintf(b, print_type ? "TAG_UnsignedShort(\"%s\"): %i\n" : "%.0s%i\n", SAFE_NAME(tree), (int)tree->payload.tag_ushort);
   else if (tree->type == NBTX_TAG_INT)
-    bprintf(b, "TAG_Int(\"%s\"): %i\n", SAFE_NAME(tree), tree->payload.tag_int);
+    bprintf(b, print_type ? "TAG_Int(\"%s\"): %i\n" : "%.0s%i\n", SAFE_NAME(tree), tree->payload.tag_int);
   else if (tree->type == NBTX_TAG_UNSIGNED_INT)
-    bprintf(b, "TAG_UnsignedInt(\"%s\"): %u\n", SAFE_NAME(tree), tree->payload.tag_uint);
+    bprintf(b, print_type ? "TAG_UnsignedInt(\"%s\"): %u\n" : "%.0s%u\n", SAFE_NAME(tree), tree->payload.tag_uint);
   else if (tree->type == NBTX_TAG_LONG)
-    bprintf(b, "TAG_Long(\"%s\"): %" PRIi64 "\n", SAFE_NAME(tree), tree->payload.tag_long);
+    bprintf(b, print_type ? "TAG_Long(\"%s\"): %" PRIi64 "\n" : "%.0s%" PRIi64 "\n", SAFE_NAME(tree), tree->payload.tag_long);
   else if (tree->type == NBTX_TAG_UNSIGNED_LONG)
-    bprintf(b, "TAG_UnsignedLong(\"%s\"): %" PRIu64 "\n", SAFE_NAME(tree), tree->payload.tag_ulong);
+    bprintf(b, print_type ? "TAG_UnsignedLong(\"%s\"): %" PRIu64 "\n" : "%.0s%" PRIu64 "\n", SAFE_NAME(tree), tree->payload.tag_ulong);
   else if (tree->type == NBTX_TAG_FLOAT)
-    bprintf(b, "TAG_Float(\"%s\"): %f\n", SAFE_NAME(tree), (double)tree->payload.tag_float);
+    bprintf(b, print_type ? "TAG_Float(\"%s\"): %f\n" : "%.0s%f\n", SAFE_NAME(tree), (double)tree->payload.tag_float);
   else if (tree->type == NBTX_TAG_DOUBLE)
-    bprintf(b, "TAG_Double(\"%s\"): %f\n", SAFE_NAME(tree), tree->payload.tag_double);
+    bprintf(b, print_type ? "TAG_Double(\"%s\"): %f\n" : "%.0s%f\n", SAFE_NAME(tree), tree->payload.tag_double);
   else if (tree->type == NBTX_TAG_BYTE_ARRAY) {
-    bprintf(b, "TAG_ByteArray(\"%s\"): ", SAFE_NAME(tree));
-    dump_byte_array(tree->payload.tag_byte_array, b);
+    bprintf(b, print_type ? "TAG_ByteArray(\"%s\"): " : "", SAFE_NAME(tree));
+    dump_byte_array(tree->payload.tag_byte_array, b, byte_array_style);
     bprintf(b, "\n");
-  } if (tree->type == NBTX_TAG_STRING) {
+  } else if (tree->type == NBTX_TAG_STRING) {
     if (tree->payload.tag_string == NULL)
       return NBTX_ERR;
 
-    bprintf(b, "TAG_String(\"%s\"): %s\n", SAFE_NAME(tree), tree->payload.tag_string);
+    bprintf(b, print_type ? "TAG_String(\"%s\"): %s\n" : "%.0s%s\n", SAFE_NAME(tree), tree->payload.tag_string);
   } else if (tree->type == NBTX_TAG_LIST) {
-    bprintf(b, "TAG_List(\"%s\") [%s]\n", SAFE_NAME(tree), nbtx_type_to_string(tree->payload.tag_list->data->type));
-    indent(b, ident);
-    bprintf(b, "{\n");
+    bprintf(b, print_type ? "TAG_List(\"%s\") [%s]" : "", SAFE_NAME(tree), nbtx_type_to_string(tree->payload.tag_list->data->type));
+    switch (brace_style) {
+    case NBTX_SAME_LINE:
+      bprintf(b, " {\n");
+      break;
+    case NBTX_OWN_LINE:
+      bprintf(b, "\n{\n");
+      break;
+    default:
+      assert(false); // Error or not implemented mode.
+    }
+      
+    const nbtx_status err = dump_list_contents_ascii(tree->payload.tag_list, b, ident + 1, NBTX_SAME_LINE, byte_array_style, false, spaces);
 
-    const nbtx_status err = dump_list_contents_ascii(tree->payload.tag_list, b, ident + 1);
-
-    indent(b, ident);
+    indent(b, ident, spaces);
     bprintf(b, "}\n");
 
     if (err != NBTX_OK)
       return err;
   } else if (tree->type == NBTX_TAG_COMPOUND) {
-    bprintf(b, "TAG_Compound(\"%s\")\n", SAFE_NAME(tree));
-    indent(b, ident);
-    bprintf(b, "{\n");
+    bprintf(b, print_type ? "TAG_Compound(\"%s\")" : "", SAFE_NAME(tree));
+    switch (brace_style) {
+      case NBTX_SAME_LINE:
+        bprintf(b, " {\n");
+        break;
+      case NBTX_OWN_LINE:
+        bprintf(b, "\n{\n");
+        break;
+      default:
+        assert(false); // Error or not implemented mode.
+    }
 
-    const nbtx_status err = dump_list_contents_ascii(tree->payload.tag_compound, b, ident + 1);
+    const nbtx_status err = dump_list_contents_ascii(tree->payload.tag_compound, b, ident + 1, NBTX_SAME_LINE, byte_array_style, true, spaces);
 
-    indent(b, ident);
+    indent(b, ident, spaces);
     bprintf(b, "}\n");
 
     if (err != NBTX_OK)
@@ -456,14 +493,18 @@ static nbtx_status dump_ascii(const nbtx_node* tree, struct buffer* b, const siz
   return NBTX_OK;
 }
 
-char* nbtx_dump_ascii(const nbtx_node* tree) {
+char* nbtx_dump_ascii(
+  const nbtx_node* tree,
+  const nbtx_brace_style brace_style,
+  const nbtx_byte_array_style byte_array_style,
+  const int spaces) {
   errno = NBTX_OK;
 
   assert(tree);
 
   struct buffer b = NBTX_BUFFER_INIT;
 
-  if ((errno = dump_ascii(tree, &b, 0)) != NBTX_OK) goto OOM;
+  if ((errno = dump_ascii(tree, &b, 0, brace_style, byte_array_style, true, spaces)) != NBTX_OK) goto OOM;
   if (buffer_reserve(&b, b.len + 1))            goto OOM;
 
   b.data[b.len] = '\0'; /* null-terminate that biatch, since bprintf doesn't
@@ -590,7 +631,7 @@ static nbtx_status dump_binary_(const nbtx_node* tree, bool dump_type, struct bu
 
   if (tree->type == NBTX_TAG_BYTE)
     DUMP_NUM(int8_t, tree->payload.tag_byte);
-  if (tree->type == NBTX_TAG_UNSIGNED_BYTE)
+  else if (tree->type == NBTX_TAG_UNSIGNED_BYTE)
     DUMP_NUM(uint8_t, tree->payload.tag_ubyte);
   else if (tree->type == NBTX_TAG_SHORT)
     DUMP_NUM(int16_t, tree->payload.tag_short);

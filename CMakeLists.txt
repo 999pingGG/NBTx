@@ -33,6 +33,10 @@ if(NBTX_BUILD_EXAMPLES)
   
   include(CTest)
   ADD_TEST(test_hello_world ${EXECUTABLE_OUTPUT_PATH}/check ${CMAKE_CURRENT_SOURCE_DIR}/testdata/hello_world.nbtx)
+  ADD_TEST(test_empty ${EXECUTABLE_OUTPUT_PATH}/check ${CMAKE_CURRENT_SOURCE_DIR}/testdata/empty_root.nbtx)
+  ADD_TEST(test_1 ${EXECUTABLE_OUTPUT_PATH}/check ${CMAKE_CURRENT_SOURCE_DIR}/testdata/test1.nbtx)
+  ADD_TEST(test_2 ${EXECUTABLE_OUTPUT_PATH}/check ${CMAKE_CURRENT_SOURCE_DIR}/testdata/test2.nbtx)
+  ADD_TEST(test_nested_compound ${EXECUTABLE_OUTPUT_PATH}/check ${CMAKE_CURRENT_SOURCE_DIR}/testdata/nested_compound.nbtx)
   # TODO: wtf is this for?
   #ADD_TEST(test_afl ${CMAKE_CURRENT_SOURCE_DIR}/afl_check.sh ${EXECUTABLE_OUTPUT_PATH}/afl_check)  
 endif()

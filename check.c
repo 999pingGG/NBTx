@@ -46,7 +46,7 @@ int main(int argc, char** argv) {
   printf("OK.\n");
 
   /* Use this to refer to the tree in gdb. */
-  char* the_tree = nbtx_dump_ascii(tree);
+  char* the_tree = nbtx_dump_ascii(tree, NBTX_SAME_LINE, NBTX_HEX, 2);
 
   if (the_tree == NULL)
     die_with_err(errno);
@@ -96,7 +96,7 @@ int main(int argc, char** argv) {
   if (!nbtx_eq(tree, tree_copy)) {
     printf("Original tree:\n%s\n", the_tree);
 
-    char* copy = nbtx_dump_ascii(tree_copy);
+    char* copy = nbtx_dump_ascii(tree_copy, NBTX_SAME_LINE, NBTX_HEX, 2);
     if (copy == NULL) die_with_err(err);
 
     printf("Reparsed tree:\n%s\n", copy);
