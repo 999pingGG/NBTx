@@ -84,7 +84,7 @@ extern "C" {
 
       struct nbtx_byte_array {
         unsigned char* data;
-        int32_t length;
+        uint32_t length;
       } tag_byte_array;
 
       char* tag_string; /* TODO: technically, this should be a UTF-8 string */
@@ -176,15 +176,21 @@ extern "C" {
  */
   nbtx_node* nbtx_parse(const void* memory, size_t length);
 
-  typedef enum {
-    NBTX_SAME_LINE = 1,
-    NBTX_OWN_LINE
-  } nbtx_brace_style;
+  typedef struct nbtx_style {
+    enum {
+      NBTX_SAME_LINE = 1,
+      NBTX_OWN_LINE
+    } brace;
 
-  typedef enum {
-    NBTX_HEX,
-    NBTX_DEC
-  } nbtx_byte_array_style;
+    enum {
+      NBTX_HEX = 1,
+      NBTX_DEC
+    } byte_array;
+
+    int spaces;
+  } nbtx_style;
+
+  #define NBTX_DEFAULT_STYLE (nbtx_style) { NBTX_SAME_LINE, NBTX_HEX, 2 }
 
   /*
    * Returns a NULL-terminated string as the ascii representation of the tree. If
@@ -193,7 +199,7 @@ extern "C" {
    * 1) Check your damn pointers.
    * 2) Don't forget to free the returned pointer. Memory leaks are bad, mkay?
    */
-  char* nbtx_dump_ascii(const nbtx_node* tree, nbtx_brace_style brace_style, nbtx_byte_array_style byte_array_style, int spaces);
+  char* nbtx_dump_ascii(const nbtx_node* tree, nbtx_style style);
 
   /*
    * Returns a buffer representing the uncompressed tree in NBTx official
@@ -306,6 +312,85 @@ extern "C" {
    * Don't use this to iterate through a list, it would be very inefficient
    */
   nbtx_node* nbtx_list_item(nbtx_node* list, int n);
+
+  /*
+   * Creates a new, empty TAG_List.
+   * If you're adding a list to another list or a compound right away, it's more efficient
+   * to call nbtx_put_list() with nbtx_new_tag_list_payload() as parameter and get the
+   * nbtx_node* from the nbtx_result returned.
+   * Returns NULL on memory errors.
+   */
+  nbtx_node* nbtx_new_list(const char* name, nbtx_type type);
+
+  /*
+   * Creates a new, empty TAG_Compound.
+   * If you're adding a compound to a list or another compound right away, it's more efficient
+   * to call nbtx_put_compound() with nbtx_new_tag_compound_payload() as parameter and get the
+   * nbtx_node* from the nbtx_result returned.
+   * Returns NULL on memory errors.
+   */
+  nbtx_node* nbtx_new_compound(const char* name);
+
+  /*
+   * You're supposed to call this function only to get an empty TAG_List payload for
+   * nbtx_put_list().
+   * If you're manually freeing this nbtx_list*, make sure to call nbtx_free()
+   * on the data member and list_del() on the entry member.
+   * Returns NULL on memory errors.
+   */
+  struct nbtx_list* nbtx_new_tag_list_payload(nbtx_type type);
+
+  /*
+   * You're supposed to call this function only to get an empty TAG_Compound payload for
+   * nbtx_put_compound().
+   * If you're manually freeing this nbtx_list*, make sure to call nbtx_free()
+   * on the data member and list_del() on the entry member.
+   * Returns NULL on memory errors.
+   */
+  struct nbtx_list* nbtx_new_tag_compound_payload(void);
+
+  /*
+   * If you want to put an existing nbtx_node* of type TAG_List into another list or
+   * compound, call this to get it's payload and free the node that used to contain it.
+   */
+  struct nbtx_list* nbtx_extract_tag_list_payload(nbtx_node* list);
+
+  /*
+   * If you want to put an existing nbtx_node* of type TAG_Compound into another compound
+   * or list, call this to get it's payload and free the node that used to contain it.
+   */
+  struct nbtx_list* nbtx_extract_tag_compound_payload(nbtx_node* compound);
+
+  typedef struct {
+    nbtx_node* reference; // The node that was just added or modified (NULL on error).
+    bool inserted; // False if the item by that name already existed. Only meaningful if reference is not null.
+  } nbtx_result;
+
+  /*
+   * Those functions set (to a TAG_Compound) or append (to a TAG_List) an item.
+   * For a compound, if the tag already exists with the same or another type,
+   * it gets replaced.
+   * For a list, the name parameter is ignored.
+   */
+  #define NBTX_SPAWN_PUT_FUNCTION_DECLARATION(c_type, datatype, ...) \
+    nbtx_result nbtx_put_##datatype(nbtx_node* list_or_compound, const char* name, c_type tag_##datatype __VA_ARGS__)
+
+  NBTX_SPAWN_PUT_FUNCTION_DECLARATION(int8_t, byte);
+  NBTX_SPAWN_PUT_FUNCTION_DECLARATION(uint8_t, ubyte);
+  NBTX_SPAWN_PUT_FUNCTION_DECLARATION(int16_t, short);
+  NBTX_SPAWN_PUT_FUNCTION_DECLARATION(uint16_t, ushort);
+  NBTX_SPAWN_PUT_FUNCTION_DECLARATION(int32_t, int);
+  NBTX_SPAWN_PUT_FUNCTION_DECLARATION(uint32_t, uint);
+  NBTX_SPAWN_PUT_FUNCTION_DECLARATION(int64_t, long);
+  NBTX_SPAWN_PUT_FUNCTION_DECLARATION(uint64_t, ulong);
+  NBTX_SPAWN_PUT_FUNCTION_DECLARATION(float, float);
+  NBTX_SPAWN_PUT_FUNCTION_DECLARATION(double, double);
+  NBTX_SPAWN_PUT_FUNCTION_DECLARATION(unsigned char*, byte_array, , uint32_t length);
+  NBTX_SPAWN_PUT_FUNCTION_DECLARATION(const char*, string);
+  NBTX_SPAWN_PUT_FUNCTION_DECLARATION(struct nbtx_list*, list);
+  NBTX_SPAWN_PUT_FUNCTION_DECLARATION(struct nbtx_list*, compound);
+
+  #undef NBTX_SPAWN_PUT_FUNCTION_DECLARATION
 
   /* TODO: More utilities as requests are made and patches contributed. */
 

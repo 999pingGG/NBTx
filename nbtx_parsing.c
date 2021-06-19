@@ -24,7 +24,7 @@
  /* A special form of memcpy which copies `n' bytes into `dest', then returns
   * `src' + n.
   */
-static const void* memscan(void* dest, const void* src, size_t n) {
+static const void* memscan(void* dest, const void* src, const size_t n) {
   memcpy(dest, src, n);
   return (const char*)src + n;
 }
@@ -51,9 +51,9 @@ static nbtx_node* parse_unnamed_tag(nbtx_type type, char* name, const char** mem
  * funky goes down, `on_failure' will be executed.
  */
 #define READ_GENERIC(dest, n, on_failure) do { \
-    if(*length < (n)) { on_failure; }                   \
-    *memory = memscan((dest), *memory, (n));            \
-    *length -= (n);                                     \
+    if(*length < (n)) { on_failure; } \
+    *memory = memscan((dest), *memory, (n)); \
+    *length -= (n); \
 } while(0)
 
  /* printfs into the end of a buffer. Note: no null-termination! */
@@ -78,17 +78,16 @@ static void bprintf(struct buffer* b, const char* restrict format, ...) {
  * appropriately. Returns NULL on failure.
  */
 static char* read_string(const char** memory, size_t* length) {
-  int16_t string_length;
+  uint16_t string_length;
   char* ret = NULL;
 
   READ_GENERIC(&string_length, sizeof string_length, goto parse_error);
 
-  if (string_length < 0)               goto parse_error;
-  if (*length < (size_t)string_length) goto parse_error;
+  if (*length < string_length) goto parse_error;
 
   CHECKED_MALLOC(ret, string_length + 1, goto parse_error);
 
-  READ_GENERIC(ret, (size_t)string_length, goto parse_error);
+  READ_GENERIC(ret, string_length, goto parse_error);
 
   ret[string_length] = '\0'; /* don't forget to NULL-terminate ;) */
   return ret;
@@ -128,11 +127,9 @@ static struct nbtx_byte_array read_byte_array(const char** memory, size_t* lengt
 
   READ_GENERIC(&ret.length, sizeof ret.length, goto parse_error);
 
-  if (ret.length < 0) goto parse_error;
-
   CHECKED_MALLOC(ret.data, ret.length, goto parse_error);
 
-  READ_GENERIC(ret.data, (size_t)ret.length, goto parse_error);
+  READ_GENERIC(ret.data, ret.length, goto parse_error);
 
   return ret;
 
@@ -178,14 +175,14 @@ static nbtx_type list_is_homogenous(const struct nbtx_list* list) {
 
 static struct nbtx_list* read_list(const char** memory, size_t* length) {
   uint8_t type;
-  int32_t elems;
+  uint32_t elems;
   struct nbtx_list* ret;
 
-  CHECKED_MALLOC(ret, sizeof * ret, goto parse_error);
+  CHECKED_MALLOC(ret, sizeof(*ret), goto parse_error);
 
   /* we allocate the data pointer to store the type of the list in the first
    * sentinel element */
-  CHECKED_MALLOC(ret->data, sizeof * ret->data, goto parse_error);
+  CHECKED_MALLOC(ret->data, sizeof(*ret->data), goto parse_error);
 
   INIT_LIST_HEAD(&ret->entry);
 
@@ -194,10 +191,10 @@ static struct nbtx_list* read_list(const char** memory, size_t* length) {
 
   ret->data->type = type == NBTX_TAG_INVALID ? NBTX_TAG_COMPOUND : (nbtx_type)type;
 
-  for (int32_t i = 0; i < elems; i++) {
+  for (uint32_t i = 0; i < elems; i++) {
     struct nbtx_list* new;
 
-    CHECKED_MALLOC(new, sizeof * new, goto parse_error);
+    CHECKED_MALLOC(new, sizeof(*new), goto parse_error);
 
     new->data = parse_unnamed_tag((nbtx_type)type, NULL, memory, length);
 
@@ -222,7 +219,7 @@ parse_error:
 static struct nbtx_list* read_compound(const char** memory, size_t* length) {
   struct nbtx_list* ret;
 
-  CHECKED_MALLOC(ret, sizeof * ret, goto parse_error);
+  CHECKED_MALLOC(ret, sizeof(*ret), goto parse_error);
 
   ret->data = NULL;
   INIT_LIST_HEAD(&ret->entry);
@@ -239,7 +236,7 @@ static struct nbtx_list* read_compound(const char** memory, size_t* length) {
     name = read_string(memory, length);
     if (name == NULL) goto parse_error;
 
-    CHECKED_MALLOC(new_entry, sizeof * new_entry,
+    CHECKED_MALLOC(new_entry, sizeof(*new_entry),
                    free(name);
     goto parse_error;
     );
@@ -268,10 +265,10 @@ parse_error:
 /*
  * Parses a tag, given a name (may be NULL) and a type. Fills in the payload.
  */
-static nbtx_node* parse_unnamed_tag(nbtx_type type, char* name, const char** memory, size_t* length) {
+static nbtx_node* parse_unnamed_tag(const nbtx_type type, char* name, const char** memory, size_t* length) {
   nbtx_node* node;
 
-  CHECKED_MALLOC(node, sizeof * node, goto parse_error);
+  CHECKED_MALLOC(node, sizeof(*node), goto parse_error);
 
   node->type = type;
   node->name = name;
@@ -342,13 +339,10 @@ parse_error:
   return NULL;
 }
 
-nbtx_node* nbtx_parse(const void* mem, size_t len) {
+nbtx_node* nbtx_parse(const void* memory, size_t length) {
   errno = NBTX_OK;
 
-  const char** memory = (const char**)&mem;
-  size_t* length = &len;
-
-  return parse_named_tag(memory, length);
+  return parse_named_tag((const char**)&memory, &length);
 }
 
 /* spaces, not tabs ;) */
@@ -365,18 +359,17 @@ static void indent(struct buffer* b, const int amount, int spaces) {
 }
 
 static nbtx_status dump_ascii(
-  const nbtx_node*,
-  struct buffer*,
+  const nbtx_node* tree,
+  struct buffer* buffer,
   int ident,
-  nbtx_brace_style brace_style,
-  nbtx_byte_array_style byte_array_style,
-  bool print_type,
-  int spaces);
+  nbtx_style style,
+  bool print_types
+);
 
 /* prints the node's name, or (null) if it has none. */
 #define SAFE_NAME(node) ((node)->name ? (node)->name : "<null>")
 
-static void dump_byte_array(const struct nbtx_byte_array ba, struct buffer* b, const nbtx_byte_array_style byte_array_style) {
+static void dump_byte_array(const struct nbtx_byte_array ba, struct buffer* b, const int byte_array_style) {
   assert(ba.length >= 0);
 
   bprintf(b, "[ ");
@@ -389,17 +382,16 @@ static nbtx_status dump_list_contents_ascii(
   const struct nbtx_list* list,
   struct buffer* b,
   const int ident,
-  const nbtx_brace_style brace_style,
-  const nbtx_byte_array_style byte_array_style,
-  const bool print_types,
-  const int spaces) {
+  const nbtx_style style,
+  const bool print_types
+) {
   const struct list_head* pos;
 
   list_for_each(pos, &list->entry) {
     const struct nbtx_list* entry = list_entry(pos, const struct nbtx_list, entry);
     nbtx_status err;
 
-    if ((err = dump_ascii(entry->data, b, ident, brace_style, byte_array_style, print_types, spaces)) != NBTX_OK)
+    if ((err = dump_ascii(entry->data, b, ident, style, print_types)) != NBTX_OK)
       return err;
   }
 
@@ -408,82 +400,81 @@ static nbtx_status dump_list_contents_ascii(
 
 static nbtx_status dump_ascii(
   const nbtx_node* tree,
-  struct buffer* b,
+  struct buffer* buffer,
   const int ident,
-  const nbtx_brace_style brace_style,
-  const nbtx_byte_array_style byte_array_style,
-  const bool print_type,
-  const int spaces) {
+  const nbtx_style style,
+  const bool print_types
+) {
   if (tree == NULL) return NBTX_OK;
 
-  indent(b, ident, spaces);
+  indent(buffer, ident, style.spaces);
 
   if (tree->type == NBTX_TAG_BYTE)
-    bprintf(b, print_type ? "TAG_Byte(\"%s\"): %i\n" : "%.0s%i\n", SAFE_NAME(tree), (int)tree->payload.tag_byte);
+    bprintf(buffer, print_types ? "TAG_Byte(\"%s\"): %i\n" : "%.0s%i\n", SAFE_NAME(tree), (int)tree->payload.tag_byte);
   else if (tree->type == NBTX_TAG_UNSIGNED_BYTE)
-    bprintf(b, print_type ? "TAG_UnsignedByte(\"%s\"): %i\n" : "%.0s%i\n", SAFE_NAME(tree), (int)tree->payload.tag_ubyte);
+    bprintf(buffer, print_types ? "TAG_UnsignedByte(\"%s\"): %i\n" : "%.0s%i\n", SAFE_NAME(tree), (int)tree->payload.tag_ubyte);
   else if (tree->type == NBTX_TAG_SHORT)
-    bprintf(b, print_type ? "TAG_Short(\"%s\"): %i\n" : "%.0s%i\n", SAFE_NAME(tree), (int)tree->payload.tag_short);
+    bprintf(buffer, print_types ? "TAG_Short(\"%s\"): %i\n" : "%.0s%i\n", SAFE_NAME(tree), (int)tree->payload.tag_short);
   else if (tree->type == NBTX_TAG_UNSIGNED_SHORT)
-    bprintf(b, print_type ? "TAG_UnsignedShort(\"%s\"): %i\n" : "%.0s%i\n", SAFE_NAME(tree), (int)tree->payload.tag_ushort);
+    bprintf(buffer, print_types ? "TAG_UnsignedShort(\"%s\"): %i\n" : "%.0s%i\n", SAFE_NAME(tree), (int)tree->payload.tag_ushort);
   else if (tree->type == NBTX_TAG_INT)
-    bprintf(b, print_type ? "TAG_Int(\"%s\"): %i\n" : "%.0s%i\n", SAFE_NAME(tree), tree->payload.tag_int);
+    bprintf(buffer, print_types ? "TAG_Int(\"%s\"): %i\n" : "%.0s%i\n", SAFE_NAME(tree), tree->payload.tag_int);
   else if (tree->type == NBTX_TAG_UNSIGNED_INT)
-    bprintf(b, print_type ? "TAG_UnsignedInt(\"%s\"): %u\n" : "%.0s%u\n", SAFE_NAME(tree), tree->payload.tag_uint);
+    bprintf(buffer, print_types ? "TAG_UnsignedInt(\"%s\"): %u\n" : "%.0s%u\n", SAFE_NAME(tree), tree->payload.tag_uint);
   else if (tree->type == NBTX_TAG_LONG)
-    bprintf(b, print_type ? "TAG_Long(\"%s\"): %" PRIi64 "\n" : "%.0s%" PRIi64 "\n", SAFE_NAME(tree), tree->payload.tag_long);
+    bprintf(buffer, print_types ? "TAG_Long(\"%s\"): %" PRIi64 "\n" : "%.0s%" PRIi64 "\n", SAFE_NAME(tree), tree->payload.tag_long);
   else if (tree->type == NBTX_TAG_UNSIGNED_LONG)
-    bprintf(b, print_type ? "TAG_UnsignedLong(\"%s\"): %" PRIu64 "\n" : "%.0s%" PRIu64 "\n", SAFE_NAME(tree), tree->payload.tag_ulong);
+    bprintf(buffer, print_types ? "TAG_UnsignedLong(\"%s\"): %" PRIu64 "\n" : "%.0s%" PRIu64 "\n", SAFE_NAME(tree), tree->payload.tag_ulong);
   else if (tree->type == NBTX_TAG_FLOAT)
-    bprintf(b, print_type ? "TAG_Float(\"%s\"): %f\n" : "%.0s%f\n", SAFE_NAME(tree), (double)tree->payload.tag_float);
+    bprintf(buffer, print_types ? "TAG_Float(\"%s\"): %f\n" : "%.0s%f\n", SAFE_NAME(tree), (double)tree->payload.tag_float);
   else if (tree->type == NBTX_TAG_DOUBLE)
-    bprintf(b, print_type ? "TAG_Double(\"%s\"): %f\n" : "%.0s%f\n", SAFE_NAME(tree), tree->payload.tag_double);
+    bprintf(buffer, print_types ? "TAG_Double(\"%s\"): %f\n" : "%.0s%f\n", SAFE_NAME(tree), tree->payload.tag_double);
   else if (tree->type == NBTX_TAG_BYTE_ARRAY) {
-    bprintf(b, print_type ? "TAG_ByteArray(\"%s\"): " : "", SAFE_NAME(tree));
-    dump_byte_array(tree->payload.tag_byte_array, b, byte_array_style);
-    bprintf(b, "\n");
+    bprintf(buffer, print_types ? "TAG_ByteArray(\"%s\"): " : "", SAFE_NAME(tree));
+    dump_byte_array(tree->payload.tag_byte_array, buffer, style.byte_array);
+    bprintf(buffer, "\n");
   } else if (tree->type == NBTX_TAG_STRING) {
     if (tree->payload.tag_string == NULL)
       return NBTX_ERR;
 
-    bprintf(b, print_type ? "TAG_String(\"%s\"): %s\n" : "%.0s%s\n", SAFE_NAME(tree), tree->payload.tag_string);
+    bprintf(buffer, print_types ? "TAG_String(\"%s\"): %s\n" : "%.0s%s\n", SAFE_NAME(tree), tree->payload.tag_string);
   } else if (tree->type == NBTX_TAG_LIST) {
-    bprintf(b, print_type ? "TAG_List(\"%s\") [%s]" : "", SAFE_NAME(tree), nbtx_type_to_string(tree->payload.tag_list->data->type));
-    switch (brace_style) {
-    case NBTX_SAME_LINE:
-      bprintf(b, " {\n");
-      break;
-    case NBTX_OWN_LINE:
-      bprintf(b, "\n{\n");
-      break;
-    default:
-      assert(false); // Error or not implemented mode.
-    }
-      
-    const nbtx_status err = dump_list_contents_ascii(tree->payload.tag_list, b, ident + 1, NBTX_SAME_LINE, byte_array_style, false, spaces);
-
-    indent(b, ident, spaces);
-    bprintf(b, "}\n");
-
-    if (err != NBTX_OK)
-      return err;
-  } else if (tree->type == NBTX_TAG_COMPOUND) {
-    bprintf(b, print_type ? "TAG_Compound(\"%s\")" : "", SAFE_NAME(tree));
-    switch (brace_style) {
+    bprintf(buffer, print_types ? "TAG_List(\"%s\") [%s]" : "", SAFE_NAME(tree), nbtx_type_to_string(tree->payload.tag_list->data->type));
+    switch (style.brace) {
       case NBTX_SAME_LINE:
-        bprintf(b, " {\n");
+        bprintf(buffer, print_types ? " {\n" : "{\n");
         break;
       case NBTX_OWN_LINE:
-        bprintf(b, "\n{\n");
+        bprintf(buffer, "\n{\n");
         break;
       default:
         assert(false); // Error or not implemented mode.
     }
 
-    const nbtx_status err = dump_list_contents_ascii(tree->payload.tag_compound, b, ident + 1, NBTX_SAME_LINE, byte_array_style, true, spaces);
+    const nbtx_status err = dump_list_contents_ascii(tree->payload.tag_list, buffer, ident + 1, style, false);
 
-    indent(b, ident, spaces);
-    bprintf(b, "}\n");
+    indent(buffer, ident, style.spaces);
+    bprintf(buffer, "}\n");
+
+    if (err != NBTX_OK)
+      return err;
+  } else if (tree->type == NBTX_TAG_COMPOUND) {
+    bprintf(buffer, print_types ? "TAG_Compound(\"%s\")" : "", SAFE_NAME(tree));
+    switch (style.brace) {
+      case NBTX_SAME_LINE:
+        bprintf(buffer, print_types ? " {\n" : "{\n");
+        break;
+      case NBTX_OWN_LINE:
+        bprintf(buffer, "\n{\n");
+        break;
+      default:
+        assert(false); // Error or not implemented mode.
+    }
+
+    const nbtx_status err = dump_list_contents_ascii(tree->payload.tag_compound, buffer, ident + 1, style, true);
+
+    indent(buffer, ident, style.spaces);
+    bprintf(buffer, "}\n");
 
     if (err != NBTX_OK)
       return err;
@@ -493,18 +484,14 @@ static nbtx_status dump_ascii(
   return NBTX_OK;
 }
 
-char* nbtx_dump_ascii(
-  const nbtx_node* tree,
-  const nbtx_brace_style brace_style,
-  const nbtx_byte_array_style byte_array_style,
-  const int spaces) {
+char* nbtx_dump_ascii(const nbtx_node* tree, const nbtx_style style) {
   errno = NBTX_OK;
 
   assert(tree);
 
   struct buffer b = NBTX_BUFFER_INIT;
 
-  if ((errno = dump_ascii(tree, &b, 0, brace_style, byte_array_style, true, spaces)) != NBTX_OK) goto OOM;
+  if ((errno = dump_ascii(tree, &b, 0, style, true)) != NBTX_OK) goto OOM;
   if (buffer_reserve(&b, b.len + 1))            goto OOM;
 
   b.data[b.len] = '\0'; /* null-terminate that biatch, since bprintf doesn't
@@ -521,7 +508,7 @@ OOM:
 }
 
 static nbtx_status dump_byte_array_binary(const struct nbtx_byte_array ba, struct buffer* b) {
-  int32_t dumped_length = ba.length;
+  uint32_t dumped_length = ba.length;
 
   CHECKED_APPEND(b, &dumped_length, sizeof dumped_length);
 
@@ -537,11 +524,11 @@ static nbtx_status dump_string_binary(const char* name, struct buffer* b) {
 
   const size_t len = strlen(name);
 
-  if (len > 32767 /* SHORT_MAX */)
+  if (len > UINT16_MAX)
     return NBTX_ERR;
 
   { /* dump the length */
-    int16_t dumped_len = (int16_t)len;
+    uint16_t dumped_len = (uint16_t)len;
 
     CHECKED_APPEND(b, &dumped_len, sizeof dumped_len);
   }
@@ -558,7 +545,7 @@ static nbtx_status dump_list_binary(const struct nbtx_list* list, struct buffer*
 
   const size_t len = list_length(&list->entry);
 
-  if (len > 2147483647 /* INT_MAX */)
+  if (len > UINT32_MAX)
     return NBTX_ERR;
 
   assert(type != NBTX_TAG_INVALID);
@@ -572,7 +559,7 @@ static nbtx_status dump_list_binary(const struct nbtx_list* list, struct buffer*
   }
 
   {
-    int32_t dumped_len = (int32_t)len;
+    uint32_t dumped_len = (uint32_t)len;
     CHECKED_APPEND(b, &dumped_len, sizeof dumped_len);
   }
 
@@ -610,7 +597,7 @@ static nbtx_status dump_compound_binary(const struct nbtx_list* list, struct buf
  *                    when dumping lists, because the list header already says
  *                    the type.
  */
-static nbtx_status dump_binary_(const nbtx_node* tree, bool dump_type, struct buffer* b) {
+static nbtx_status dump_binary_(const nbtx_node* tree, const bool dump_type, struct buffer* b) {
   if (dump_type) { /* write out the type */
     int8_t type = (int8_t)tree->type;
 
@@ -624,9 +611,9 @@ static nbtx_status dump_binary_(const nbtx_node* tree, bool dump_type, struct bu
       return err;
   }
 
-  #define DUMP_NUM(type, x) do {             \
-    type temp = x;                           \
-    CHECKED_APPEND(b, &temp, sizeof temp);   \
+  #define DUMP_NUM(type, x) do { \
+    type temp = x; \
+    CHECKED_APPEND(b, &temp, sizeof temp); \
 } while(0)
 
   if (tree->type == NBTX_TAG_BYTE)
