@@ -1,3 +1,5 @@
+### This repo is now archived since I've decided to use MessagePack for my game instead. I'm no longer interested in this.
+
 # NBTx
 
 NBTx is a tag based binary format based on Notch's NBT format, but it has a few modifications to make it more useful outside the Java world:
